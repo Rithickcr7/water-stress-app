@@ -15,7 +15,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Centered Logo
+# Centered logo
 if os.path.exists(logo_path):
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
@@ -52,7 +52,6 @@ def detect_leaf(img):
 
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
-    # Wider range to include yellow stressed leaves
     lower_green = np.array([20,30,30])
     upper_green = np.array([100,255,255])
 
@@ -63,7 +62,7 @@ def detect_leaf(img):
 
     leaf = cv2.bitwise_and(img,img,mask=mask)
 
-    return leaf
+    return leaf, mask
 
 # ---------------- GREENNESS INDEX ----------------
 
@@ -75,7 +74,7 @@ def calculate_exg(img):
 
     exg = 2*g - r - b
 
-    return np.mean(exg), exg
+    return exg
 
 # ---------------- CHLOROPHYLL ESTIMATION ----------------
 
@@ -154,34 +153,34 @@ if image is not None:
 
     img = cv2.GaussianBlur(img,(5,5),0)
 
-    leaf = detect_leaf(img)
+    leaf, leaf_mask = detect_leaf(img)
 
-    exg_value, exg_matrix = calculate_exg(leaf)
+    exg_matrix = calculate_exg(leaf)
+
+    # Use only leaf pixels for calculations
+    leaf_pixels = exg_matrix[leaf_mask > 0]
+
+    exg_value = np.mean(leaf_pixels)
 
     chl_value = chlorophyll_value(exg_value)
 
     heatmap, exg_norm = create_heatmap(exg_matrix)
 
-    # ---------------- IMPROVED STRESS DETECTION ----------------
+    # ---------------- STRESS DETECTION ----------------
 
-    # Detect leaf pixels only
-    leaf_mask = leaf[:,:,1] > 20
-
-    # Scientific ExG stress threshold
     stress_threshold = 40
 
-    # Stress pixels inside leaf only
-    stress_mask = (exg_matrix < stress_threshold) & leaf_mask
+    stress_mask = (exg_matrix < stress_threshold) & (leaf_mask > 0)
 
-    # Highlight stressed area
     highlight = leaf.copy()
+
     highlight[stress_mask] = [0,0,255]
 
-    # Calculate stress percentage only on leaf
     stress_pixels = np.sum(stress_mask)
-    leaf_pixels = np.sum(leaf_mask)
 
-    stress_percent = (stress_pixels / leaf_pixels) * 100
+    leaf_pixels_count = np.sum(leaf_mask > 0)
+
+    stress_percent = (stress_pixels / leaf_pixels_count) * 100
 
     # ---------- DISPLAY ----------
 
