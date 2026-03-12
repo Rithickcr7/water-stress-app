@@ -258,3 +258,4 @@ if image is not None:
                 f,
                 file_name="banana_crop_stress_report.pdf"
             )
+
