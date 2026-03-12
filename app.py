@@ -15,7 +15,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Centered logo
+# Center logo
 if os.path.exists(logo_path):
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
@@ -23,7 +23,7 @@ if os.path.exists(logo_path):
 
 st.markdown("""
 # 🌱 Crop Water Stress Detection System
-AI-based leaf analysis for smart irrigation support
+AI-based Leaf Analysis for Smart Irrigation
 """)
 
 # ---------------- INPUT ----------------
@@ -39,12 +39,6 @@ with colB:
 if camera_image is not None:
     image = camera_image
 
-leaftemp = st.number_input(
-    "Enter Leaf Temperature (°C)",
-    10.0,
-    60.0,
-    28.0
-)
 
 # ---------------- LEAF DETECTION ----------------
 
@@ -64,6 +58,7 @@ def detect_leaf(img):
 
     return leaf, mask
 
+
 # ---------------- GREENNESS INDEX ----------------
 
 def calculate_exg(img):
@@ -76,32 +71,50 @@ def calculate_exg(img):
 
     return exg
 
+
 # ---------------- CHLOROPHYLL ESTIMATION ----------------
 
 def chlorophyll_value(exg):
 
     return 0.45 * exg + 25
 
+
+# ---------------- TEMPERATURE ESTIMATION ----------------
+
+def estimate_leaf_temperature(exg):
+
+    temp = 35 - (exg * 0.05)
+
+    return np.clip(temp,24,38)
+
+
 # ---------------- HEATMAP ----------------
 
-def create_heatmap(exg_matrix):
+def create_heatmap(exg_matrix, mask):
 
-    exg_norm = cv2.normalize(
-        exg_matrix,
-        None,
-        0,
-        255,
-        cv2.NORM_MINMAX
-    )
+    exg_norm = cv2.normalize(exg_matrix,None,0,255,cv2.NORM_MINMAX)
 
     exg_norm = exg_norm.astype(np.uint8)
 
-    heatmap = cv2.applyColorMap(
-        exg_norm,
-        cv2.COLORMAP_JET
-    )
+    heatmap = cv2.applyColorMap(exg_norm, cv2.COLORMAP_TURBO)
 
-    return heatmap, exg_norm
+    heatmap = cv2.bitwise_and(heatmap, heatmap, mask=mask)
+
+    return heatmap
+
+
+# ---------------- LEGEND ----------------
+
+def create_color_legend():
+
+    gradient = np.linspace(0,255,256).astype(np.uint8)
+
+    gradient = np.tile(gradient,(40,1))
+
+    legend = cv2.applyColorMap(gradient, cv2.COLORMAP_TURBO)
+
+    return legend
+
 
 # ---------------- STRESS LOGIC ----------------
 
@@ -116,9 +129,10 @@ def stress_logic(temp, chl):
     else:
         return "High Stress", "Immediate irrigation required"
 
-# ---------------- PDF REPORT ----------------
 
-def generate_pdf(status, stress, chl):
+# ---------------- PDF ----------------
+
+def generate_pdf(status, chl, temp):
 
     temp_file = tempfile.NamedTemporaryFile(delete=False)
 
@@ -126,8 +140,8 @@ def generate_pdf(status, stress, chl):
 
     c.drawString(100,750,"Crop Water Stress Report")
     c.drawString(100,720,f"Stress Status: {status}")
-    c.drawString(100,700,f"Stress Area: {stress}%")
-    c.drawString(100,680,f"Estimated Chlorophyll: {chl}")
+    c.drawString(100,700,f"Estimated Chlorophyll: {chl}")
+    c.drawString(100,680,f"Estimated Leaf Temperature: {temp} °C")
 
     c.drawString(100,640,"Recommendation:")
 
@@ -144,7 +158,8 @@ def generate_pdf(status, stress, chl):
 
     return temp_file.name
 
-# ---------------- MAIN PROCESS ----------------
+
+# ---------------- MAIN ----------------
 
 if image is not None:
 
@@ -153,36 +168,23 @@ if image is not None:
 
     img = cv2.GaussianBlur(img,(5,5),0)
 
-    leaf, leaf_mask = detect_leaf(img)
+    leaf, mask = detect_leaf(img)
 
     exg_matrix = calculate_exg(leaf)
 
-    # Use only leaf pixels for calculations
-    leaf_pixels = exg_matrix[leaf_mask > 0]
+    leaf_pixels = exg_matrix[mask > 0]
 
     exg_value = np.mean(leaf_pixels)
 
     chl_value = chlorophyll_value(exg_value)
 
-    heatmap, exg_norm = create_heatmap(exg_matrix)
+    leaf_temp = estimate_leaf_temperature(exg_value)
 
-    # ---------------- STRESS DETECTION ----------------
+    heatmap = create_heatmap(exg_matrix, mask)
 
-    stress_threshold = 40
+    legend = create_color_legend()
 
-    stress_mask = (exg_matrix < stress_threshold) & (leaf_mask > 0)
-
-    highlight = leaf.copy()
-
-    highlight[stress_mask] = [0,0,255]
-
-    stress_pixels = np.sum(stress_mask)
-
-    leaf_pixels_count = np.sum(leaf_mask > 0)
-
-    stress_percent = (stress_pixels / leaf_pixels_count) * 100
-
-    # ---------- DISPLAY ----------
+    # -------- DISPLAY --------
 
     col1, col2 = st.columns(2)
 
@@ -193,10 +195,11 @@ if image is not None:
     with col2:
         st.subheader("Stress Heatmap")
         st.image(heatmap, channels="BGR")
-        st.info("Blue/Green = Healthy | Yellow/Red = Stress")
 
-    st.subheader("Stress Highlight Map")
-    st.image(highlight, channels="BGR")
+        st.markdown("**Stress Scale**")
+        st.image(legend, channels="BGR")
+
+        st.info("Blue/Green = Healthy | Yellow/Red = High Stress")
 
     st.markdown("### 📊 Analysis Results")
 
@@ -204,11 +207,11 @@ if image is not None:
 
     c1.metric("Greenness Index", round(exg_value,2))
     c2.metric("Chlorophyll Estimate", round(chl_value,2))
-    c3.metric("Stress Area (%)", round(stress_percent,2))
+    c3.metric("Estimated Leaf Temp (°C)", round(leaf_temp,2))
 
     if st.button("Analyze Plant Stress"):
 
-        result, suggestion = stress_logic(leaftemp, chl_value)
+        result, suggestion = stress_logic(leaf_temp, chl_value)
 
         st.success(result)
 
@@ -216,8 +219,8 @@ if image is not None:
 
         pdf_file = generate_pdf(
             result,
-            round(stress_percent,2),
-            round(chl_value,2)
+            round(chl_value,2),
+            round(leaf_temp,2)
         )
 
         with open(pdf_file,"rb") as f:
