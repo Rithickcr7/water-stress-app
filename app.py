@@ -15,30 +15,19 @@ st.set_page_config(
     layout="wide"
 )
 
-# Center logo
+# Logo
 if os.path.exists(logo_path):
     col1,col2,col3 = st.columns([1,2,1])
     with col2:
         st.image(logo_path,width=150)
 
-st.markdown("""
-# 🍌 Banana Leaf Water Stress Detection System
-AI-based image analysis for irrigation decision support
-""")
+st.title("🍌 Banana Leaf Water Stress Detection System")
+st.write("AI-based banana leaf analysis for irrigation support")
 
-# ---------------- IMAGE INPUT ----------------
-
-colA,colB = st.columns(2)
-
-with colA:
-    image = st.file_uploader("Upload Banana Leaf Image",type=["jpg","png","jpeg"])
-
-with colB:
-    camera_image = st.camera_input("Capture Banana Leaf Image")
-
-if camera_image is not None:
-    image = camera_image
-
+mode = st.radio(
+    "Select Mode",
+    ["Image Analysis","Live Camera Scan"]
+)
 
 # ---------------- BANANA LEAF SEGMENTATION ----------------
 
@@ -60,16 +49,15 @@ def detect_leaf(img):
 
     if len(contours) > 0:
 
-        largest_contour = max(contours,key=cv2.contourArea)
+        largest = max(contours,key=cv2.contourArea)
 
-        if cv2.contourArea(largest_contour) > 2000:
+        if cv2.contourArea(largest) > 2000:
 
-            cv2.drawContours(leaf_mask,[largest_contour],-1,255,-1)
+            cv2.drawContours(leaf_mask,[largest],-1,255,-1)
 
     leaf = cv2.bitwise_and(img,img,mask=leaf_mask)
 
     return leaf,leaf_mask
-
 
 # ---------------- GREENNESS INDEX ----------------
 
@@ -83,13 +71,11 @@ def calculate_exg(img):
 
     return exg
 
-
-# ---------------- CHLOROPHYLL ESTIMATION ----------------
+# ---------------- CHLOROPHYLL ----------------
 
 def chlorophyll_value(exg):
 
     return 0.5 * exg + 20
-
 
 # ---------------- TEMPERATURE ESTIMATION ----------------
 
@@ -98,7 +84,6 @@ def estimate_leaf_temperature(exg):
     temp = 35 - (exg * 0.05)
 
     return np.clip(temp,24,38)
-
 
 # ---------------- HEATMAP ----------------
 
@@ -121,7 +106,6 @@ def create_heatmap(exg_matrix):
 
     return heatmap
 
-
 # ---------------- STRESS CLASSIFICATION ----------------
 
 def stress_logic(temp,chl):
@@ -135,7 +119,6 @@ def stress_logic(temp,chl):
     else:
         return "High Stress","Immediate irrigation required"
 
-
 # ---------------- PDF REPORT ----------------
 
 def generate_pdf(status,stress,chl,temp):
@@ -145,7 +128,6 @@ def generate_pdf(status,stress,chl,temp):
     c = canvas.Canvas(temp_file.name)
 
     c.drawString(100,750,"Banana Crop Water Stress Report")
-
     c.drawString(100,720,f"Stress Status: {status}")
     c.drawString(100,700,f"Stress Area: {stress}%")
     c.drawString(100,680,f"Estimated Chlorophyll: {chl}")
@@ -166,96 +148,126 @@ def generate_pdf(status,stress,chl,temp):
 
     return temp_file.name
 
+# =========================================================
+# IMAGE ANALYSIS MODE
+# =========================================================
 
-# ---------------- MAIN PROCESS ----------------
+if mode == "Image Analysis":
 
-if image is not None:
+    image = st.file_uploader(
+        "Upload Banana Leaf Image",
+        type=["jpg","png","jpeg"]
+    )
 
-    file_bytes = np.asarray(bytearray(image.read()),dtype=np.uint8)
+    if image is not None:
 
-    img = cv2.imdecode(file_bytes,1)
+        file_bytes = np.asarray(bytearray(image.read()),dtype=np.uint8)
+        img = cv2.imdecode(file_bytes,1)
 
-    img = cv2.GaussianBlur(img,(5,5),0)
+        img = cv2.GaussianBlur(img,(5,5),0)
 
-    leaf,leaf_mask = detect_leaf(img)
+        leaf,leaf_mask = detect_leaf(img)
 
-    exg_matrix = calculate_exg(leaf)
+        exg_matrix = calculate_exg(leaf)
 
-    leaf_pixels = exg_matrix[leaf_mask>0]
+        leaf_pixels = exg_matrix[leaf_mask>0]
 
-    exg_value = np.mean(leaf_pixels)
+        exg_value = np.mean(leaf_pixels)
 
-    chl_value = chlorophyll_value(exg_value)
+        chl_value = chlorophyll_value(exg_value)
 
-    leaf_temp = estimate_leaf_temperature(exg_value)
+        leaf_temp = estimate_leaf_temperature(exg_value)
 
-    heatmap = create_heatmap(exg_matrix)
+        heatmap = create_heatmap(exg_matrix)
 
-    # ---------------- STRESS AREA DETECTION ----------------
+        stress_threshold = 55
 
-    stress_threshold = 55
+        stress_mask = (exg_matrix < stress_threshold) & (leaf_mask>0)
 
-    stress_mask = (exg_matrix < stress_threshold) & (leaf_mask>0)
+        highlight = leaf.copy()
 
-    highlight = leaf.copy()
+        highlight[stress_mask] = [0,0,255]
 
-    highlight[stress_mask] = [0,0,255]
+        stress_pixels = np.sum(stress_mask)
 
-    stress_pixels = np.sum(stress_mask)
+        leaf_pixels_count = np.sum(leaf_mask>0)
 
-    leaf_pixels_count = np.sum(leaf_mask>0)
+        stress_percent = (stress_pixels / leaf_pixels_count) * 100
 
-    stress_percent = (stress_pixels / leaf_pixels_count) * 100
+        col1,col2 = st.columns(2)
 
+        with col1:
+            st.subheader("Detected Banana Leaf")
+            st.image(leaf,channels="BGR")
 
-    # ---------------- DISPLAY ----------------
+        with col2:
+            st.subheader("Stress Heatmap")
+            st.image(heatmap,channels="BGR")
 
-    col1,col2 = st.columns(2)
+        st.subheader("Stress Highlight Map")
+        st.image(highlight,channels="BGR")
 
-    with col1:
-        st.subheader("Detected Banana Leaf")
-        st.image(leaf,channels="BGR")
+        st.markdown("### Analysis Results")
 
-    with col2:
-        st.subheader("Stress Heatmap")
-        st.image(heatmap,channels="BGR")
-        st.info("Blue/Green = Healthy | Yellow/Red = Stress")
+        c1,c2,c3,c4 = st.columns(4)
 
+        c1.metric("Greenness Index",round(exg_value,2))
+        c2.metric("Chlorophyll Estimate",round(chl_value,2))
+        c3.metric("Leaf Temp (°C)",round(leaf_temp,2))
+        c4.metric("Stress Area (%)",round(stress_percent,2))
 
-    st.subheader("Stress Highlight Map")
-    st.image(highlight,channels="BGR")
+        if st.button("Analyze Banana Plant Stress"):
 
+            result,suggestion = stress_logic(leaf_temp,chl_value)
 
-    st.markdown("### 📊 Analysis Results")
+            st.success(result)
 
-    c1,c2,c3,c4 = st.columns(4)
+            st.info("Recommendation: "+suggestion)
 
-    c1.metric("Greenness Index",round(exg_value,2))
-    c2.metric("Chlorophyll Estimate",round(chl_value,2))
-    c3.metric("Leaf Temp Estimate (°C)",round(leaf_temp,2))
-    c4.metric("Stress Area (%)",round(stress_percent,2))
-
-
-    if st.button("Analyze Banana Plant Stress"):
-
-        result,suggestion = stress_logic(leaf_temp,chl_value)
-
-        st.success(result)
-
-        st.info("Recommendation: "+suggestion)
-
-        pdf_file = generate_pdf(
-            result,
-            round(stress_percent,2),
-            round(chl_value,2),
-            round(leaf_temp,2)
-        )
-
-        with open(pdf_file,"rb") as f:
-
-            st.download_button(
-                "Download Farmer PDF Report",
-                f,
-                file_name="banana_crop_stress_report.pdf"
+            pdf_file = generate_pdf(
+                result,
+                round(stress_percent,2),
+                round(chl_value,2),
+                round(leaf_temp,2)
             )
 
+            with open(pdf_file,"rb") as f:
+
+                st.download_button(
+                    "Download Farmer PDF Report",
+                    f,
+                    file_name="banana_crop_stress_report.pdf"
+                )
+
+# =========================================================
+# LIVE CAMERA MODE
+# =========================================================
+
+if mode == "Live Camera Scan":
+
+    camera_image = st.camera_input("Scan Banana Leaf")
+
+    if camera_image is not None:
+
+        file_bytes = np.asarray(bytearray(camera_image.read()),dtype=np.uint8)
+        img = cv2.imdecode(file_bytes,1)
+
+        leaf,leaf_mask = detect_leaf(img)
+
+        exg_matrix = calculate_exg(leaf)
+
+        leaf_pixels = exg_matrix[leaf_mask>0]
+
+        exg_value = np.mean(leaf_pixels)
+
+        chl_value = chlorophyll_value(exg_value)
+
+        leaf_temp = estimate_leaf_temperature(exg_value)
+
+        heatmap = create_heatmap(exg_matrix)
+
+        st.image(heatmap,channels="BGR",caption="Live Stress Heatmap")
+
+        result,_ = stress_logic(leaf_temp,chl_value)
+
+        st.success(result)
