@@ -3,21 +3,26 @@ import cv2
 import numpy as np
 from reportlab.pdfgen import canvas
 import tempfile
+import os
 
 # ---------------- UI CONFIG ----------------
+
+logo_path = "logo.png"
+
 st.set_page_config(
     page_title="Crop Water Stress Detector",
-    page_icon="logo.png",
+    page_icon=logo_path if os.path.exists(logo_path) else "🌱",
     layout="wide"
 )
 
-col1, col2, col3 = st.columns([1,2,1])
-
-with col2:
-    st.image("logo.png", width=150)
+# Centered logo
+if os.path.exists(logo_path):
+    col1, col2, col3 = st.columns([1,2,1])
+    with col2:
+        st.image(logo_path, width=150)
 
 st.markdown("""
-# Crop Water Stress Detection System
+# 🌱 Crop Water Stress Detection System
 AI-based leaf analysis for smart irrigation support
 """)
 
@@ -205,3 +210,4 @@ if image is not None:
                 file_name="crop_stress_report.pdf"
 
             )
+
