@@ -7,16 +7,19 @@ import tempfile
 # ---------------- UI CONFIG ----------------
 st.set_page_config(
     page_title="Crop Water Stress Detector",
-    page_icon="🌱",
+    page_icon="logo.png",
     layout="wide"
 )
 
-st.markdown(
-"""
-# 🌱 Crop Water Stress Detection System
+col1, col2, col3 = st.columns([1,2,1])
+
+with col2:
+    st.image("logo.png", width=150)
+
+st.markdown("""
+# Crop Water Stress Detection System
 AI-based leaf analysis for smart irrigation support
-"""
-)
+""")
 
 # ---------------- INPUT ----------------
 colA, colB = st.columns(2)
@@ -200,4 +203,5 @@ if image is not None:
                 "Download Farmer PDF Report",
                 f,
                 file_name="crop_stress_report.pdf"
+
             )
