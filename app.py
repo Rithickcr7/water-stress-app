@@ -11,11 +11,11 @@ logo_path = "logo.png"
 
 st.set_page_config(
     page_title="Crop Water Stress Detector",
-    page_icon=logo_path if os.path.exists(logo_path) else "🌱",
+    page_icon="🌱",
     layout="wide"
 )
 
-# Centered logo
+# Centered Logo
 if os.path.exists(logo_path):
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
@@ -27,6 +27,7 @@ AI-based leaf analysis for smart irrigation support
 """)
 
 # ---------------- INPUT ----------------
+
 colA, colB = st.columns(2)
 
 with colA:
@@ -46,12 +47,14 @@ leaftemp = st.number_input(
 )
 
 # ---------------- LEAF DETECTION ----------------
+
 def detect_leaf(img):
 
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
-    lower_green = np.array([25,40,40])
-    upper_green = np.array([90,255,255])
+    # Wider range to include yellow stressed leaves
+    lower_green = np.array([20,30,30])
+    upper_green = np.array([100,255,255])
 
     mask = cv2.inRange(hsv, lower_green, upper_green)
 
@@ -62,7 +65,8 @@ def detect_leaf(img):
 
     return leaf
 
-# ---------------- GREENNESS ----------------
+# ---------------- GREENNESS INDEX ----------------
+
 def calculate_exg(img):
 
     img = img.astype(np.float32)
@@ -73,12 +77,14 @@ def calculate_exg(img):
 
     return np.mean(exg), exg
 
-# ---------------- CHLOROPHYLL ----------------
+# ---------------- CHLOROPHYLL ESTIMATION ----------------
+
 def chlorophyll_value(exg):
 
     return 0.45 * exg + 25
 
 # ---------------- HEATMAP ----------------
+
 def create_heatmap(exg_matrix):
 
     exg_norm = cv2.normalize(
@@ -99,6 +105,7 @@ def create_heatmap(exg_matrix):
     return heatmap, exg_norm
 
 # ---------------- STRESS LOGIC ----------------
+
 def stress_logic(temp, chl):
 
     if chl > 45 and temp < 30:
@@ -111,6 +118,7 @@ def stress_logic(temp, chl):
         return "High Stress", "Immediate irrigation required"
 
 # ---------------- PDF REPORT ----------------
+
 def generate_pdf(status, stress, chl):
 
     temp_file = tempfile.NamedTemporaryFile(delete=False)
@@ -138,6 +146,7 @@ def generate_pdf(status, stress, chl):
     return temp_file.name
 
 # ---------------- MAIN PROCESS ----------------
+
 if image is not None:
 
     file_bytes = np.asarray(bytearray(image.read()),dtype=np.uint8)
@@ -153,19 +162,29 @@ if image is not None:
 
     heatmap, exg_norm = create_heatmap(exg_matrix)
 
-    threshold = np.mean(exg_norm)
+    # ---------------- IMPROVED STRESS DETECTION ----------------
 
-    stress_mask = exg_norm < threshold
+    # Detect leaf pixels only
+    leaf_mask = leaf[:,:,1] > 20
 
+    # Scientific ExG stress threshold
+    stress_threshold = 40
+
+    # Stress pixels inside leaf only
+    stress_mask = (exg_matrix < stress_threshold) & leaf_mask
+
+    # Highlight stressed area
     highlight = leaf.copy()
     highlight[stress_mask] = [0,0,255]
 
+    # Calculate stress percentage only on leaf
     stress_pixels = np.sum(stress_mask)
-    total_pixels = exg_norm.size
+    leaf_pixels = np.sum(leaf_mask)
 
-    stress_percent = (stress_pixels / total_pixels) * 100
+    stress_percent = (stress_pixels / leaf_pixels) * 100
 
     # ---------- DISPLAY ----------
+
     col1, col2 = st.columns(2)
 
     with col1:
@@ -208,6 +227,4 @@ if image is not None:
                 "Download Farmer PDF Report",
                 f,
                 file_name="crop_stress_report.pdf"
-
             )
-
